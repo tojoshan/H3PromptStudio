@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+# Carpeta del modelo: nunca versionar pesos ni el repo Git anidado de Qwen.
+models/Qwen3-VL-4B-Instruct/
+models/*/
+
+# Permitir solo el archivo centinela que marca la ubicación esperada.
+!models/PUT_MODEL_HERE.txt

@@ -1,0 +1,10 @@
+Copiar aquí el repositorio completo de Qwen3-VL-4B-Instruct.
+
+Ruta esperada:
+    models/Qwen3-VL-4B-Instruct/
+
+Se puede descargar con:
+    download_model.bat
+
+Este archivo existe solo para que la carpeta models/ se conserve en el repo.
+Los pesos del modelo NO se versionan (ver .gitignore).
