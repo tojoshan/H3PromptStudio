@@ -22,7 +22,12 @@ from scene import (
     Subject,
     VideoMode,
 )
-from compiler import compile_h3_prompt, compile_scene_spec_prompt
+from compiler import (
+    compile_h3_prompt,
+    compile_h3_reference_prompt,
+    compile_prompt,
+    compile_scene_spec_prompt,
+)
 
 
 def _spec(content: SceneContent, **kwargs) -> SceneSpec:
@@ -173,6 +178,65 @@ def test_reference_mode_requires_references():
         raise AssertionError("reference sin referencias deberia fallar")
 
 
+def test_reference_prompt_has_six_sections_in_order():
+    content = SceneContent(subject=Subject(name="Meche"), action="walks into a bar")
+    spec = SceneSpec(
+        mode=VideoMode.REFERENCE,
+        user_request="test",
+        content=content,
+        references=[Reference(path="assets/meche.png", role="character", description="Meche the protagonist")],
+    )
+    prompt = compile_h3_reference_prompt(spec)
+    order = [
+        "subject_definitions:",
+        "summary:",
+        "retention_analysis:",
+        "detailed_description:",
+        "overall_soundscape:",
+        "non_diegetic_music:",
+    ]
+    positions = [prompt.index(s) for s in order]
+    assert positions == sorted(positions), prompt
+
+def test_reference_labels_are_assigned():
+    content = SceneContent(subject=Subject(name="Meche"), action="walks")
+    spec = SceneSpec(
+        mode=VideoMode.REFERENCE,
+        user_request="test",
+        content=content,
+        references=[
+            Reference(path="a.png", role="character", description="Meche"),
+            Reference(path="b.png", role="environment", description="Bar", kind="picture"),
+        ],
+    )
+    prompt = compile_h3_reference_prompt(spec)
+    assert "<Subject 1>" in prompt, prompt
+    assert "<Picture 1>" in prompt, prompt
+    assert "fully_preserved" in prompt, prompt
+
+def test_reference_prompt_requires_references():
+    content = SceneContent(subject=Subject(name="Meche"), action="walks")
+    spec = SceneSpec(user_request="test", content=content)
+    try:
+        compile_h3_reference_prompt(spec)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Ref2VA sin referencias deberia fallar")
+
+
+def test_compile_prompt_dispatches_by_mode():
+    plain = SceneContent(subject=Subject(name="Meche"), action="walks")
+    t2v = compile_prompt(_spec(plain))
+    assert t2v.startswith("integrated_multimodal_description:"), t2v
+    ref_spec = SceneSpec(
+        mode=VideoMode.REFERENCE,
+        user_request="test",
+        content=plain,
+        references=[Reference(path="a.png", role="character")],
+    )
+    ref_prompt = compile_prompt(ref_spec)
+    assert ref_prompt.startswith("subject_definitions:"), ref_prompt
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for test in tests:

@@ -53,8 +53,21 @@ overall_soundscape: <ambiencia física> | N/A
 non_diegetic_music: <música sólo audible al público> | N/A
 ```
 
-El compilador también expone `compile_scene_spec_prompt`, la variante legada por
-secciones (`SUBJECT` / `ACTION` / `CAMERA` / …), conservada para inspección y debug.
+Cuando hay referencias (`mode=reference`), el compilador emite la variante
+**Ref2VA de seis secciones** en orden fijo:
+
+```text
+subject_definitions:
+summary:
+retention_analysis:
+detailed_description:
+overall_soundscape:
+non_diegetic_music:
+```
+
+`compile_prompt()` elige automáticamente el formato según el modo. También se
+expone `compile_scene_spec_prompt`, la variante legada por secciones
+(`SUBJECT` / `ACTION` / `CAMERA` / …), conservada para inspección y debug.
 
 La arquitectura actual separa deliberadamente dos responsabilidades:
 
@@ -1018,6 +1031,8 @@ H3PromptStudio/
 ├── test_scene.py
 ├── test_compiler.py
 ├── test_interpreter.py
+├── test_quant.py
+├── test_checkpoint.py
 ├── test_model.py
 ├── check_gpu.py
 ├── download_model.py
@@ -1028,6 +1043,13 @@ H3PromptStudio/
 ├── download_model.bat
 ├── README.md
 ├── .gitignore
+├── docs/
+│   ├── RUNTIME_DESIGN.md
+│   └── PRD_Orquestador_Local_Video_Generativo_H3.md
+├── h3runtime/
+│   ├── __init__.py
+│   ├── quant.py
+│   └── checkpoint.py
 └── models/
     └── Qwen3-VL-4B-Instruct/
 ```
@@ -1064,12 +1086,24 @@ Contrato Pydantic y validación de SceneSpec: `VideoMode`, `AspectRatio`,
 
 ### `compiler.py`
 
-Convierte SceneSpec en el **prompt estructurado real de H3**, emitiendo los tres
-campos obligatorios en orden (`integrated_multimodal_description`,
+Convierte SceneSpec en el **prompt estructurado real de H3**. Para T2VA emite los
+tres campos obligatorios en orden (`integrated_multimodal_description`,
 `overall_soundscape`, `non_diegetic_music`), con `[Shot 1]`, cámara en inglés
 natural, diálogo `(S1) says: <d>[English] …</d>` y `N/A` en los campos de audio
-vacíos. Conserva además `compile_scene_spec_prompt`, la variante legada por
-secciones (`SUBJECT` / `CAMERA` / …) para inspección y debug.
+vacíos. Para Ref2VA emite las seis secciones con labels `<Subject N>` /
+`<Picture N>`. `compile_prompt()` elige el formato según el modo. Conserva
+`compile_scene_spec_prompt` (variante legada) para inspección y debug.
+
+### `h3runtime/`
+
+Runtime propio de MiniMax H3 (ver `docs/RUNTIME_DESIGN.md`).
+
+- `quant.py`: de-cuantización INT8 y rotación ConvRot (Hadamard regular).
+- `checkpoint.py`: lector del checkpoint, metadata, dequant+desrotado y geometría
+  de atención.
+
+Estado: **E1 completo** (cargar y decuantizar pesos, verificado numéricamente
+contra el checkpoint real). E2–E4 pendientes (modelo, offload, forward).
 
 ### `test_scene.py`
 

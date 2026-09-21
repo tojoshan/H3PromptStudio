@@ -65,6 +65,11 @@ class Reference(BaseModel):
     path: str
     role: Literal["character", "style", "environment", "object", "other"] = "character"
     description: str = ""
+    # Marca de retenci\u00f3n para Ref2VA. Los visibles usan fully_preserved /
+    # partially_preserved / attribute_transfer / weak_reference; el audio usa
+    # fully_copy / partially_copy / reference / weak_reference.
+    retention: str = "fully_preserved"
+    kind: Literal["subject", "picture", "video", "audio"] = "subject"
 
 class Subject(BaseModel):
     name: str = ""
