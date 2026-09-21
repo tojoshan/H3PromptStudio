@@ -7,28 +7,33 @@ echo.
 
 set FAIL=0
 
-echo [1/5] Presets y SceneSpec
+echo [1/6] Presets y SceneSpec
 .venv\Scripts\python.exe test_scene.py
 if errorlevel 1 set FAIL=1
 echo.
 
-echo [2/5] Compilador de prompt H3 (T2VA + Ref2VA)
+echo [2/6] Compilador de prompt H3 (T2VA + Ref2VA)
 .venv\Scripts\python.exe test_compiler.py
 if errorlevel 1 set FAIL=1
 echo.
 
-echo [3/5] Interprete (normalizacion y continuidad)
+echo [3/6] Interprete (normalizacion y continuidad)
 .venv\Scripts\python.exe test_interpreter.py
 if errorlevel 1 set FAIL=1
 echo.
 
-echo [4/5] Runtime H3: cuantizacion INT8 + ConvRot
+echo [4/6] Runtime H3: cuantizacion INT8 + ConvRot
 .venv\Scripts\python.exe test_quant.py
 if errorlevel 1 set FAIL=1
 echo.
 
-echo [5/5] Runtime H3: lector de checkpoint
+echo [5/6] Runtime H3: lector de checkpoint
 .venv\Scripts\python.exe test_checkpoint.py
+if errorlevel 1 set FAIL=1
+echo.
+
+echo [6/6] Runtime H3: layout de atencion (split QKV)
+.venv\Scripts\python.exe test_layout.py
 if errorlevel 1 set FAIL=1
 echo.
 

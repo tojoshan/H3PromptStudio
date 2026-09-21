@@ -80,13 +80,44 @@ Dos consecuencias directas:
    grupos de 256 canales. Hay que **des-rotar** antes de usarlos. Esta es la razón
    por la que "cargar el checkpoint" no es un `load_state_dict` directo.
 
-### 2.3 Layout de QKV
+### 2.3 Layout de QKV — RESUELTO
+Geometría confirmada por el `config.json` oficial de H3:
 
-El checkpoint guarda `qkv_proj` con las heads **agrupadas**
-(`[heads, 3, head_dim, ...]`), pero el modelo espera el layout **interleaved**
-(`[3, heads, head_dim, ...]`). La permutación debe aplicarse al peso **y** a su
-escala. `head_dim` sale de `q_norm.weight.shape[0]` (128) y
-`heads = qkv.shape[0] // (3 * head_dim)`.
+```text
+num_attention_heads      = 56
+attention_head_dim       = 128
+hidden_size              = 5376
+num_layers               = 50
+token_refiner_num_layers = 2
+ffn_hidden_size          = 14336
+text_dim                 = 5120
+```
+
+El checkpoint guarda `qkv_proj` **interleaved por head** con las 3 proyecciones
+(Q, K, V) empaquetadas:
+
+```text
+qkv_proj.weight  [21504, 5376]  = [56 * 3 * 128, 5376]
+    -> reshape [heads, 3, head_dim, hidden] = [56, 3, 128, 5376]
+q_proj / k_proj / v_proj  cada uno [7168, 5376] = [56 * 128, 5376]
+out_proj.weight  [5376, 7168]   = [5376, 56 * 128]
+```
+
+**Corrección respecto de la hipótesis inicial**: son **3 proyecciones por head**
+(Q/K/V packed), no 4. La escala `[N, 1]` se parte con la **misma** permutación.
+Implementado en `h3runtime/layout.py` (`split_interleaved_qkv`) y verificado
+contra el checkpoint real.
+
+La geometría de atención de referencia (Wan2GP) confirma el reshape:
+`grouped = src.reshape(num_attention_heads, 3, attention_head_dim, ...)`.
+
+### 2.6 MLP
+El MLP es **gated** (doble ancho en `fc1`):
+
+```text
+mlp.fc1.weight  [28672, 5376] = [2 * 14336, 5376]
+mlp.fc2.weight  [5376, 14336]
+```
 
 ### 2.4 Versiones de referencia
 
