@@ -116,7 +116,7 @@ with gr.Blocks(title="H3 Prompt Studio") as demo:
             value="t2v",
             label="Modo",
         )
-        duration = gr.Slider(1, 15, value=5, step=1, label="Duración (s)")
+        duration = gr.Slider(4, 15, value=5, step=1, label="Duración (s)")
 
     with gr.Row():
         aspect = gr.Dropdown(

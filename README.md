@@ -41,8 +41,20 @@ Normalización / validación en Python
         ↓
 Compilador determinista
         ↓
-Prompt optimizado para MiniMax H3
+Prompt estructurado para MiniMax H3
 ```
+
+El prompt compilado sigue la sintaxis oficial de H3 (variante T2VA/FL2VA), con tres
+campos obligatorios y en orden fijo:
+
+```text
+integrated_multimodal_description: [Shot 1] <escena + acción + cámara + diálogo>
+overall_soundscape: <ambiencia física> | N/A
+non_diegetic_music: <música sólo audible al público> | N/A
+```
+
+El compilador también expone `compile_scene_spec_prompt`, la variante legada por
+secciones (`SUBJECT` / `ACTION` / `CAMERA` / …), conservada para inspección y debug.
 
 La arquitectura actual separa deliberadamente dos responsabilidades:
 
@@ -241,9 +253,20 @@ secondary_action
 style
 lighting
 camera
+soundscape             # campo H3: overall_soundscape
+non_diegetic_music     # campo H3: non_diegetic_music
+dialogue               # lista de Dialogue (habla de H3)
 must_preserve
 must_avoid
 ```
+
+`content.dialogue` es una lista de objetos `Dialogue` con:
+
+```text
+speaker      # S1, S2, ...
+language     # English, Spanish, ...
+text
+offscreen    # bool: voz en off (la guía pide cerrar los labios)
 
 `content.subject` es un objeto `Subject` con:
 
@@ -262,17 +285,26 @@ angle
 lens_feel
 ```
 
+La cámara se emite como una cláusula en inglés natural dentro del shot, como pide
+la guía de H3 (no hay tokens especiales de cámara).
+
 `generation` contiene:
 
 ```text
-duration_seconds   # 1.0–15.0
+duration_seconds   # 4.0–15.0 (rango real de H3)
 fps                # fijo en 24
 aspect_ratio
 quality
 width              # derivado, no editable
 height             # derivado, no editable
+num_frames         # derivado: se ajusta a la regla 17n+5
 seed               # -1 = aleatorio
 ```
+
+`width` y `height` se derivan de `aspect_ratio` + `quality`, y el validador
+exige que sean múltiplos de 32 (requisito de H3). `num_frames` se calcula con
+`frames_for_duration()` redondeando hacia arriba al siguiente valor válido de la
+forma `17n+5`: por ejemplo 5 s → 124 frames, 15 s → 362 frames.
 
 `references` es una lista de objetos `Reference` con:
 
@@ -355,12 +387,24 @@ acciones reales de descriptores aunque el verbo no esté en la whitelist.
 Los parámetros técnicos no dependen de Qwen.
 
 ### FPS
-
 ```text
 24 FPS
 ```
 
 El aumento a 30/60 FPS debe ser una etapa posterior de interpolación.
+
+### Duración
+H3 acepta clips de **4 a 15 segundos**. La cantidad de frames no es libre:
+H3 decodifica longitudes de la forma **17n+5**, así que el compilador redondea
+hacia arriba la duración pedida al siguiente valor válido.
+
+```text
+5 s  → 124 frames
+15 s → 362 frames
+```
+
+Videos más largos que 15 s se obtienen encadenando ventanas con solapamiento
+(sliding windows), no en una sola generación.
 
 ### Relaciones de aspecto
 
@@ -400,6 +444,68 @@ directamente sobre el formulario.
 
 ---
 
+## Runtime MiniMax H3 — realidad y decisiones
+Esta sección documenta los hechos verificados sobre H3 que condicionan la
+arquitectura. Son el resultado de la investigación de la Fase 2.
+
+### Modelo
+```text
+MiniMax-H3 = modelo omni-modal denso de ~33B (H3-Omni-Transformer)
+Text encoder = Qwen3-VL-32B completo
+Salida = video 768p + audio estéreo 32 kHz en un solo paso
+FPS = 24 fijo
+Duración = 4–15 s por generación
+Resolución = múltiplos de 32, borde corto 768 px
+CFG = destilado → sin guidance_scale ni negative_prompt
+Seed = reproducible vía torch.Generator
+```
+
+### Checkpoints
+Dos familias, cada una un repo HF-style con `model_index.json`:
+
+```text
+FL2VA  → Text-to-Audio-Video + First/Last-Frame   (cubre T2V e I2V)
+Ref2VA → Reference-to-Audio-Video
+```
+
+El repo completo pesa ~144 GB en BF16. El **footprint mínimo viable** es la
+versión **pruned INT8** (checkpoint ~20B con curvas AdaLN comprimidas) más los
+VAEs, el text encoder cuantizado y el latent upscaler (~42 GB en disco).
+
+### Por qué no se depende de ComfyUI ni de Wan2GP
+Ambos son funcionales pero **mutan bajo los pies del usuario**: una actualización
+puede romper el modelo, y una misma sesión puede fallar en la segunda generación
+al dejar de reconocer el text encoder como compatible. Este proyecto prioriza un
+runtime **propio, aislado y con versiones congeladas**.
+
+Se toma `X:\Wan2GP\models\minimax_h3` **sólo como referencia técnica**
+(no como dependencia): de allí provienen los detalles de la regla `17n+5`, el
+uso de offload a RAM para caber en 12 GB de VRAM, y las versiones que
+funcionan en esta máquina.
+
+### Versiones de referencia (a congelar)
+
+```text
+torch        2.10.0+cu130
+torchaudio   2.10.0+cu130
+torchvision  0.25.0+cu130
+diffusers    0.36.0
+transformers 4.54.0
+accelerate   1.15.0
+mmgp         3.8.0    # offload de memoria GPU/RAM
+```
+
+`mmgp` es la pieza que permite correr un modelo de este tamaño en 12 GB de VRAM
+mediante offload dinámico a RAM. Requiere RAM de sistema abundante (~64 GB
+recomendado para el modo offload).
+
+### Licencia
+H3 se distribuye bajo la **MiniMax H3 Community License Agreement** (no es
+Apache/MIT) y su despliegue local tiene **restricciones territoriales**. Revisar
+antes de cualquier uso comercial.
+
+---
+
 # Hoja de ruta pendiente
 
 ## Fase 1 — Prompt interpreter
@@ -414,8 +520,10 @@ directamente sobre el formulario.
 - [x] separación acción / acción secundaria
 - [x] `must_preserve`
 - [x] `must_avoid`
-- [x] compilador determinista
-- [x] presets de resolución
+- [x] compilador determinista al formato real de H3
+- [x] presets de resolución (múltiplos de 32)
+- [x] cálculo de `num_frames` según la regla 17n+5
+- [x] campos de audio H3 (`soundscape`, `non_diegetic_music`, `dialogue`)
 - [x] caché del modelo
 
 ### Completado (tests)
@@ -437,19 +545,25 @@ directamente sobre el formulario.
 
 ## Fase 2 — Runtime MiniMax H3
 
-Objetivo: ejecutar H3 directamente desde Python sin depender de ComfyUI.
+Objetivo: ejecutar H3 directamente desde Python sin depender de ComfyUI ni de
+Wan2GP, con un runtime propio y versiones congeladas.
+
+Hecho:
+
+- [x] investigar la arquitectura y el formato de H3 (ver "Runtime MiniMax H3 —
+      realidad y decisiones");
+- [x] identificar las versiones que funcionan en esta máquina (a congelar);
+- [x] confirmar la sintaxis real del prompt H3 y ajustar el compilador;
+- [x] modelar los límites reales (4–15 s, frames 17n+5, resolución múltiplo de 32).
 
 Pendiente:
 
-- [ ] investigar y fijar runtime oficial/estable para MiniMax H3;
-- [ ] fijar versiones exactas de PyTorch, Transformers y dependencias;
-- [ ] cargar H3 localmente;
+- [ ] decidir el camino de implementación (diffusers ModularPipeline vs. runtime
+      propio vendorizado);
 - [ ] aislar H3 de Qwen para controlar VRAM;
-- [ ] implementar carga/descarga controlada entre CPU/GPU;
+- [ ] implementar carga/descarga controlada entre CPU/GPU (offload a RAM);
 - [ ] primer render T2V;
 - [ ] manejo de seed;
-- [ ] duración;
-- [ ] resolución;
 - [ ] progress callbacks;
 - [ ] cancelación de generación;
 - [ ] limpieza de VRAM después de errores;
@@ -950,9 +1064,12 @@ Contrato Pydantic y validación de SceneSpec: `VideoMode`, `AspectRatio`,
 
 ### `compiler.py`
 
-Convierte SceneSpec en prompt determinista para H3, emitiendo las secciones
-`SUBJECT`, `ENVIRONMENT`, `ACTION`, `SECONDARY ACTION`, `CAMERA`, `VISUAL STYLE`,
-`LIGHTING`, `PRESERVE` y `AVOID`.
+Convierte SceneSpec en el **prompt estructurado real de H3**, emitiendo los tres
+campos obligatorios en orden (`integrated_multimodal_description`,
+`overall_soundscape`, `non_diegetic_music`), con `[Shot 1]`, cámara en inglés
+natural, diálogo `(S1) says: <d>[English] …</d>` y `N/A` en los campos de audio
+vacíos. Conserva además `compile_scene_spec_prompt`, la variante legada por
+secciones (`SUBJECT` / `CAMERA` / …) para inspección y debug.
 
 ### `test_scene.py`
 
