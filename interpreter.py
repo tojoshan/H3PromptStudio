@@ -104,16 +104,43 @@ def is_qwen_loaded() -> bool:
     return get_qwen_components.cache_info().currsize > 0
 
 
+# Whitelist de verbos frecuentes del dominio (acciones visuales concretas).
 _VERB_PATTERNS = [
-    r"\b(walks?|walking|runs?|running|plays?|playing|looks?|looking|jumps?|jumping|flies?|flying|appears?|appearing|sits?|sitting|barks?|barking|meows?|meowing|chases?|chasing|observes?|observing|rests?|resting|sleeps?|sleeping|trots?|trotting|moves?|moving|turns?|turning|interacts?|interacting|stops?|stopping|approaches?|approaching|follows?|following|crosses?|crossing|enters?|entering|leaves?|leaving)\b",
+    r"\b(walks?|walking|runs?|running|plays?|playing|looks?|looking|jumps?|jumping|flies?|flying|appears?|appearing|sits?|sitting|barks?|barking|meows?|meowing|chases?|chasing|observes?|observing|rests?|resting|sleeps?|sleeping|trots?|trotting|moves?|moving|turns?|turning|interacts?|interacting|stops?|stopping|approaches?|approaching|follows?|following|crosses?|crossing|enters?|entering|leaves?|leaving|sniffs?|sniffing|glances?|glancing|stretches?|stretching|yawns?|yawning|shakes?|shaking|tilts?|tilting|reaches?|reaching|climbs?|climbing|digs?|digging|eats?|eating|drinks?|drinking|hides?|hiding|watches?|watching|waits?|waiting|circles?|circling|wanders?|wandering|scratches?|scratching|licks?|licking|nudges?|nudging|pauses?|pausing)\b",
 ]
 
+# Sufijos de conjugacion (tercera persona, gerundio, pasado).
+_VERB_SUFFIXES = ("ing", "ed", "es", "s")
+
+# Palabras que terminan en esos sufijos pero NO son acciones (falsos positivos).
+_NON_VERB_WORDS = {
+    "is", "was", "as", "his", "its", "this", "has", "always", "perhaps",
+    "glistening", "shining", "glowing", "reflecting", "sparkling",  # adjetivos part.
+    "fluffy", "fuzzy", "wavy", "curly", "furry",
+    "eyes", "whiskers", "claws", "paws", "fur", "ears", "legs",
+}
+
+
+def _looks_like_verb(word: str) -> bool:
+    # Heuristica morfologica para detectar una accion conjugada.
+    w = word.strip(".,;:!?()\"'").lower()
+    if len(w) < 4 or w in _NON_VERB_WORDS:
+        return False
+    if not w.endswith(_VERB_SUFFIXES):
+        return False
+    stem = w[:-2] if w.endswith(("ing", "ed")) else w[:-1]
+    # El tallo debe tener al menos 2 letras para evitar ruido.
+    return len(stem) >= 2
 
 def _has_verb(text: str) -> bool:
     t = (text or "").strip().lower()
     if not t:
         return False
-    return any(re.search(pattern, t) for pattern in _VERB_PATTERNS)
+    if any(re.search(pattern, t) for pattern in _VERB_PATTERNS):
+        return True
+    # Fallback morfologico: revisar las primeras palabras de la frase.
+    words = t.split()
+    return any(_looks_like_verb(word) for word in words[:3])
 
 
 def _clean(text: str) -> str:

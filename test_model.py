@@ -1,6 +1,5 @@
 from time import perf_counter
-from interpreter import MODEL_DIR, get_qwen_pipe, model_files_present
-
+from interpreter import MODEL_DIR, get_qwen_components, model_files_present
 print("Modelo:", MODEL_DIR)
 print("Archivos completos:", model_files_present())
 if not model_files_present():
@@ -8,5 +7,6 @@ if not model_files_present():
 
 t0 = perf_counter()
 print("Cargando Qwen...")
-get_qwen_pipe()
+processor, model = get_qwen_components()
 print(f"Qwen cargado en {perf_counter() - t0:.1f} s")
+print("Dispositivo:", next(model.parameters()).device)

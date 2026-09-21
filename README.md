@@ -165,13 +165,19 @@ download_model.bat
 .venv\Scripts\python.exe test_model.py
 ```
 
-6. Ejecutar:
+6. Correr los tests (no requieren GPU ni el modelo):
+
+```text
+run_tests.bat
+```
+
+7. Ejecutar:
 
 ```text
 run.bat
 ```
 
-7. Abrir:
+8. Abrir:
 
 ```text
 http://127.0.0.1:7860
@@ -330,7 +336,14 @@ model_files_present()                → bool: ¿están los archivos del modelo?
 is_qwen_loaded()                     → bool: ¿hay componentes en caché (VRAM)?
 interpret_scene(text)                → SceneContent interpretado y normalizado
 get_qwen_components()                → (processor, model) con lru_cache(1)
+_has_verb(text)                      → bool: ¿la frase contiene una acción?
 ```
+
+La detección de acciones (`_has_verb`) combina una **whitelist** de verbos
+frecuentes del dominio con un **fallback morfológico** por sufijos
+(`-s`, `-es`, `-ing`, `-ed`) sobre las primeras palabras, con una lista negra de
+falsos positivos (`fluffy`, `kitten`, `shining`, etc.). Esto permite separar
+acciones reales de descriptores aunque el verbo no esté en la whitelist.
 
 `interpret_scene` devuelve **sólo** `SceneContent`. El ensamblado del
 `SceneSpec` completo (con `mode`, `user_request` y `generation`) lo hace `app.py`.
@@ -405,11 +418,16 @@ directamente sobre el formulario.
 - [x] presets de resolución
 - [x] caché del modelo
 
+### Completado (tests)
+
+- [x] tests deterministas del compilador (`test_compiler.py`);
+- [x] tests de la normalización del intérprete (`test_interpreter.py`);
+- [x] test de regresión multi-personaje (perra peluda + gata Nebelung);
+- [x] mejora de la detección de acciones/verbos (whitelist + fallback morfológico);
+- [x] runner `run_tests.bat` (no requiere GPU).
+
 ### Pendiente
-- [ ] batería automática de prompts de regresión (los tests de calidad semántica todavía no existen);
-- [ ] tests para pronombres y referencias cruzadas;
-- [ ] tests para múltiples personajes;
-- [ ] tests para acciones complejas;
+- [ ] tests ejecutables contra Qwen real para pronombres y referencias cruzadas;
 - [ ] mejorar extracción de cámara;
 - [ ] mejorar extracción de iluminación;
 - [ ] detectar entidades secundarias como objetos estructurados;
@@ -794,16 +812,19 @@ Pendiente:
 ---
 
 ## Fase 15 — Tests y estabilidad
-
 El objetivo es evitar la inestabilidad experimentada con workflows de ComfyUI.
+
+Implementado (sin GPU, vía `run_tests.bat`):
+
+- [x] tests de presets y resolución (`test_scene.py`);
+- [x] tests del compiler (`test_compiler.py`);
+- [x] tests de la normalización del interpreter (`test_interpreter.py`).
 
 Pendiente:
 
 - [ ] `requirements.lock` o versiones exactas;
-- [ ] tests de SceneSpec;
-- [ ] tests de interpreter;
-- [ ] tests del compiler;
-- [ ] tests de resolución;
+- [ ] tests de SceneSpec (más allá de presets);
+- [ ] tests ejecutables contra Qwen real (prompts completos);
 - [ ] tests de carga de modelos;
 - [ ] smoke test H3;
 - [ ] test T2V;
@@ -881,12 +902,15 @@ H3PromptStudio/
 ├── scene.py
 ├── compiler.py
 ├── test_scene.py
+├── test_compiler.py
+├── test_interpreter.py
 ├── test_model.py
 ├── check_gpu.py
 ├── download_model.py
 ├── requirements.txt
 ├── setup.bat
 ├── run.bat
+├── run_tests.bat
 ├── download_model.bat
 ├── README.md
 ├── .gitignore
@@ -934,6 +958,23 @@ Convierte SceneSpec en prompt determinista para H3, emitiendo las secciones
 
 Verifica `resolve_dimensions` para varios presets y el cálculo automático de
 `width` / `height` / `fps` en `GenerationConfig`.
+
+### `test_compiler.py`
+
+Tests deterministas del compilador de prompt H3: secciones y su orden, omisión
+de secciones vacías, normalización de espacios, cámara parcial, determinismo y
+validación de modo `reference`. No requiere GPU ni torch.
+
+### `test_interpreter.py`
+
+Tests de la capa determinista del intérprete: detección de verbos, limpieza y
+deduplicación, fusión de `secondary_action` sin verbo y propagación de rasgos de
+identidad a `must_preserve`, incluido un caso de regresión multi-personaje.
+Importa `interpreter` (torch/transformers) pero no usa la GPU ni el modelo.
+
+### `run_tests.bat`
+
+Ejecuta los tres suites de tests sin GPU y devuelve error si alguno falla.
 
 ### `test_model.py`
 
